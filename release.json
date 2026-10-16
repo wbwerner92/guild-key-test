@@ -1,11 +1,11 @@
 {
   "app": "guild-encrypted-prototype",
-  "label": "Trial 2",
-  "version": "d739e15af6814ca2",
+  "label": "Trial 3",
+  "version": "eb6ba9a3f2c8f090",
   "assets": [
     {
       "path": "index.html",
-      "sha256": "f01c4e507d1b0d9ee97634e6ded3e486fb2f35a932f51f1a8a3757b7052fa414"
+      "sha256": "67aed22a0954b3693060b5a7da00fbecdfdcacfc4b631638459e2e56b7f33b44"
     },
     {
       "path": "loader.css",
@@ -25,7 +25,7 @@
     },
     {
       "path": "package.enc.json",
-      "sha256": "e64adf3770ea08d0817ec37e91a2819d4b308f270aab09cc6b0f787bdb36edab"
+      "sha256": "6db7aba9aadbc8cdeebfa3824388183c31d546f94213c2ef81d520e0ab68e5ce"
     },
     {
       "path": "public-key.json",
