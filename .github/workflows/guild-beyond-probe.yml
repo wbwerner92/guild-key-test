@@ -1,0 +1,60 @@
+name: Guild Beyond runner probe
+run-name: Guild Beyond connectivity probe
+on:
+  push:
+    branches: [codex/beyond-runner-test]
+    paths: [.github/workflows/guild-beyond-probe.yml]
+  workflow_dispatch:
+    inputs:
+      character_id:
+        description: Numeric character ID (no Beyond login is used)
+        required: true
+        default: '168792426'
+        type: string
+permissions: {}
+concurrency:
+  group: guild-beyond-runner-probe
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: github.repository == 'wbwerner92/guild-key-test'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Set up Node 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+          token: ''
+      - name: Probe anonymous Beyond access
+        env:
+          CHARACTER_ID: ${{ inputs.character_id || '168792426' }}
+        shell: bash
+        run: |
+          node <<'GUILD_PROBE'
+          'use strict';
+          // A connectivity diagnostic only: never log or save the character payload.
+          async function probe({characterId,fetcher=fetch,now=Date.now}={}){
+            const started=now();let upstreamStatus=null;
+            const finish=value=>({format:'guild-beyond-runner-probe',version:1,...value,upstreamStatus,elapsedMs:Math.max(0,now()-started)});
+            if(typeof characterId!=='string'||! /^[1-9]\d{0,15}$/.test(characterId))return finish({ok:false,outcome:'invalid_input'});
+            try{
+              const response=await fetcher('https://character-service.dndbeyond.com/character/v5/character/'+characterId,{headers:{Accept:'application/json'},credentials:'omit',redirect:'error',signal:AbortSignal.timeout(10000)});
+              upstreamStatus=response.status;
+              if(!response.ok){await response.body?.cancel();return finish({ok:false,outcome:'upstream_rejected'});}
+              let text='',bytes=0;const decoder=new TextDecoder();
+              for await(const chunk of response.body){bytes+=chunk.byteLength;if(bytes>8000000){text='';return finish({ok:false,outcome:'response_too_large'});}text+=decoder.decode(chunk,{stream:true});}
+              text+=decoder.decode();const payload=JSON.parse(text),data=payload?.data;
+              if(payload?.success!==true||String(data?.id)!==characterId)return finish({ok:false,outcome:'unexpected_response'});
+              const classes=Array.isArray(data.classes)&&data.classes.length>0&&data.classes.every(entry=>Number.isInteger(entry.level)&&entry.level>=1&&entry.level<=20&&typeof entry.definition?.name==='string'&&entry.definition.name.trim());
+              const hpInputs=Number.isInteger(data.removedHitPoints)&&Number.isInteger(data.temporaryHitPoints)&&(Number.isInteger(data.overrideHitPoints)||(Number.isInteger(data.baseHitPoints)&&Array.isArray(data.stats)&&data.modifiers&&typeof data.modifiers==='object'));
+              return finish({ok:true,outcome:'reachable',levelClassFieldsPresent:Boolean(classes),hpInputFieldsPresent:Boolean(hpInputs)});
+            }catch{return finish({ok:false,outcome:'network_or_response_error'});}
+          }
+          function summary(result){
+            const flags=result.ok?'| Level/Class fields present | '+result.levelClassFieldsPresent+' |\n| HP input fields present | '+result.hpInputFieldsPresent+' |\n':'';
+            return '# Guild → Beyond runner connectivity\n\n| Check | Result |\n| --- | --- |\n| Outcome | '+result.outcome+' |\n| HTTP status | '+(result.upstreamStatus??'unavailable')+' |\n| Fetch/validation time | '+result.elapsedMs+' ms |\n'+flags+'\nThis checks anonymous runner access and field availability only. It does not calculate or publish stats, prove app integration, or measure the workflow queue/setup delay. No Guild source, saves, private key, Beyond cookies, or complete character data were used or published.\n';
+          }
+          (async()=>{const result=await probe({characterId:process.env.CHARACTER_ID});console.log(JSON.stringify(result));if(process.env.GITHUB_STEP_SUMMARY)require('node:fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY,summary(result));if(!result.ok)process.exitCode=1;})();
+          GUILD_PROBE
